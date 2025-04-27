@@ -2,9 +2,10 @@
 
 import type React from "react"
 
-import { forwardRef, useImperativeHandle, useRef } from "react"
+import { forwardRef, useImperativeHandle, useRef, useState } from "react"
 import { useToast } from "@/hooks/use-toast"
 import { FIELD_DEFINITIONS } from "@/lib/field-definitions"
+import { ProgressModal } from "./progress-modal"
 
 interface FileUploaderProps {
   onDataLoaded: (data: any[]) => void
@@ -13,6 +14,10 @@ interface FileUploaderProps {
 const FileUploader = forwardRef<HTMLInputElement, FileUploaderProps>(({ onDataLoaded }, ref) => {
   const fileInputRef = useRef<HTMLInputElement>(null)
   const { toast } = useToast()
+  const [isImporting, setIsImporting] = useState(false)
+  const [progress, setProgress] = useState({ current: 0, total: 0 })
+  const [importSpeed, setImportSpeed] = useState<number | undefined>(undefined)
+  const [timeRemaining, setTimeRemaining] = useState<number | undefined>(undefined)
 
   useImperativeHandle(ref, () => fileInputRef.current as HTMLInputElement)
 
@@ -37,6 +42,8 @@ const FileUploader = forwardRef<HTMLInputElement, FileUploaderProps>(({ onDataLo
       const reader = new FileReader()
       reader.onload = async (event) => {
         try {
+          setIsImporting(true)
+
           const data = new Uint8Array(event.target?.result as ArrayBuffer)
           const workbook = XLSX.read(data, { type: "array" })
 
@@ -55,32 +62,81 @@ const FileUploader = forwardRef<HTMLInputElement, FileUploaderProps>(({ onDataLo
           // Skip header row
           const dataRows = jsonData.slice(1)
 
-          // Process data
-          const processedData = dataRows.map((row, index) => {
-            const rowData: Record<string, string> = {}
+          // Set total for progress
+          setProgress({ current: 0, total: dataRows.length })
 
-            // Set sequential number
-            rowData.sequencialRegistro = (index + 1).toString()
+          // Variables for speed calculation
+          const startTime = Date.now()
+          let lastUpdateTime = startTime
+          let processedSinceLastUpdate = 0
 
-            // Set default values for special fields
-            rowData.tipoMovimentacao = "1"
+          // Process data in chunks to avoid UI freezing
+          const CHUNK_SIZE = 100
+          const processedData: Record<string, string>[] = []
 
-            // Set current date for dataOperacao if not provided
-            const today = new Date()
-            const day = String(today.getDate()).padStart(2, "0")
-            const month = String(today.getMonth() + 1).padStart(2, "0")
-            const year = today.getFullYear()
-            rowData.dataOperacao = `${day}${month}${year}`
+          for (let i = 0; i < dataRows.length; i += CHUNK_SIZE) {
+            // Process a chunk of data
+            const chunk = dataRows.slice(i, Math.min(i + CHUNK_SIZE, dataRows.length))
 
-            // Map other fields
-            FIELD_DEFINITIONS.forEach((field, fieldIndex) => {
-              if (field.id !== "sequencialRegistro" && field.id !== "tipoMovimentacao" && field.id !== "dataOperacao") {
-                rowData[field.id] = row[fieldIndex] || ""
-              }
+            // Process each row in the chunk
+            const chunkData = chunk.map((row, chunkIndex) => {
+              const rowData: Record<string, string> = {}
+              const index = i + chunkIndex
+
+              // Set sequential number
+              rowData.sequencialRegistro = (index + 1).toString()
+
+              // Set default values for special fields
+              rowData.tipoMovimentacao = "1"
+
+              // Set current date for dataOperacao if not provided
+              const today = new Date()
+              const day = String(today.getDate()).padStart(2, "0")
+              const month = String(today.getMonth() + 1).padStart(2, "0")
+              const year = today.getFullYear()
+              rowData.dataOperacao = `${day}${month}${year}`
+
+              // Map other fields
+              FIELD_DEFINITIONS.forEach((field, fieldIndex) => {
+                if (
+                  field.id !== "sequencialRegistro" &&
+                  field.id !== "tipoMovimentacao" &&
+                  field.id !== "dataOperacao"
+                ) {
+                  rowData[field.id] = row[fieldIndex] || ""
+                }
+              })
+
+              return rowData
             })
 
-            return rowData
-          })
+            // Add chunk data to processed data
+            processedData.push(...chunkData)
+
+            // Update progress
+            const currentProgress = Math.min(i + CHUNK_SIZE, dataRows.length)
+            setProgress({ current: currentProgress, total: dataRows.length })
+
+            // Calculate speed and time remaining
+            processedSinceLastUpdate += chunk.length
+            const now = Date.now()
+            if (now - lastUpdateTime > 1000) {
+              // Update every second
+              const elapsedSeconds = (now - lastUpdateTime) / 1000
+              const speed = Math.round(processedSinceLastUpdate / elapsedSeconds)
+              setImportSpeed(speed)
+
+              const remaining = dataRows.length - currentProgress
+              const timeRemainingSeconds = Math.round(remaining / speed)
+              setTimeRemaining(timeRemainingSeconds)
+
+              lastUpdateTime = now
+              processedSinceLastUpdate = 0
+            }
+
+            // Allow UI to update by yielding execution
+            await new Promise((resolve) => setTimeout(resolve, 0))
+          }
 
           // Pass data to parent component
           onDataLoaded(processedData)
@@ -89,6 +145,14 @@ const FileUploader = forwardRef<HTMLInputElement, FileUploaderProps>(({ onDataLo
           if (fileInputRef.current) {
             fileInputRef.current.value = ""
           }
+
+          // Calculate total time
+          const totalTime = (Date.now() - startTime) / 1000
+
+          toast({
+            title: "Sucesso",
+            description: `${dataRows.length} registros importados em ${totalTime.toFixed(1)} segundos`,
+          })
         } catch (error) {
           console.error("Error processing file:", error)
           toast({
@@ -96,6 +160,10 @@ const FileUploader = forwardRef<HTMLInputElement, FileUploaderProps>(({ onDataLo
             description: "Ocorreu um erro ao processar o arquivo",
             variant: "destructive",
           })
+        } finally {
+          setIsImporting(false)
+          setImportSpeed(undefined)
+          setTimeRemaining(undefined)
         }
       }
 
@@ -105,6 +173,7 @@ const FileUploader = forwardRef<HTMLInputElement, FileUploaderProps>(({ onDataLo
           description: "Ocorreu um erro ao ler o arquivo",
           variant: "destructive",
         })
+        setIsImporting(false)
       }
 
       reader.readAsArrayBuffer(file)
@@ -115,11 +184,27 @@ const FileUploader = forwardRef<HTMLInputElement, FileUploaderProps>(({ onDataLo
         description: "Ocorreu um erro ao carregar a biblioteca de processamento de Excel",
         variant: "destructive",
       })
+      setIsImporting(false)
     }
   }
 
   return (
-    <input type="file" ref={fileInputRef} onChange={handleFileChange} accept=".xlsx,.xls,.csv" className="hidden" />
+    <>
+      <input
+        type="file"
+        ref={fileInputRef}
+        onChange={handleFileChange}
+        accept=".xlsx,.xls,.xlsm,.csv"
+        className="hidden"
+      />
+      <ProgressModal
+        isOpen={isImporting}
+        current={progress.current}
+        total={progress.total}
+        speed={importSpeed}
+        timeRemaining={timeRemaining}
+      />
+    </>
   )
 })
 
