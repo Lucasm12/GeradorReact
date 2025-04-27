@@ -163,6 +163,7 @@ const FileUploader = forwardRef<HTMLInputElement, FileUploaderProps>(({ onDataLo
     // Use smaller chunks to prevent browser from freezing
     const CHUNK_SIZE = 100
     const processedData: Record<string, string>[] = []
+    const invalidCpfRows: number[] = []
 
     try {
       for (let i = 0; i < dataRows.length; i += CHUNK_SIZE) {
@@ -190,7 +191,19 @@ const FileUploader = forwardRef<HTMLInputElement, FileUploaderProps>(({ onDataLo
           // Map other fields
           FIELD_DEFINITIONS.forEach((field, fieldIndex) => {
             if (field.id !== "sequencialRegistro" && field.id !== "tipoMovimentacao" && field.id !== "dataOperacao") {
-              rowData[field.id] = row[fieldIndex] || ""
+              let value = row[fieldIndex] || ""
+
+              // Limpar caracteres não numéricos do CPF
+              if (field.id === "cpfBeneficiario" && value) {
+                value = value.replace(/\D/g, "")
+
+                // Verificar se o CPF é inválido (não tem 11 dígitos)
+                if (value.length !== 11) {
+                  invalidCpfRows.push(index + 1)
+                }
+              }
+
+              rowData[field.id] = value
             }
           })
 
@@ -209,6 +222,22 @@ const FileUploader = forwardRef<HTMLInputElement, FileUploaderProps>(({ onDataLo
 
         // Allow UI to update by yielding execution
         await new Promise((resolve) => setTimeout(resolve, 0))
+      }
+
+      // Se houver CPFs inválidos, mostrar alerta
+      if (invalidCpfRows.length > 0) {
+        // Limitar a exibição a 10 linhas para não sobrecarregar o alerta
+        const rowsToShow = invalidCpfRows.slice(0, 10)
+        const remainingRows = invalidCpfRows.length - rowsToShow.length
+
+        toast({
+          title: "Atenção: CPFs inválidos detectados",
+          description: `Foram encontrados CPFs inválidos nas linhas: ${rowsToShow.join(", ")}${
+            remainingRows > 0 ? ` e mais ${remainingRows} linhas` : ""
+          }. Por favor, corrija-os antes de gerar o arquivo.`,
+          variant: "destructive",
+          duration: 10000,
+        })
       }
 
       return processedData

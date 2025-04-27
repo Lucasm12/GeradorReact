@@ -22,14 +22,14 @@ interface DataTableProps {
   data: any[]
   onUpdateCell: (rowIndex: number, fieldId: string, value: string) => void
   onRemoveRow: (rowIndex: number) => void
+  currentPage: number
+  onPageChange: (page: number) => void
 }
 
-export default function DataTable({ data, onUpdateCell, onRemoveRow }: DataTableProps) {
+export default function DataTable({ data, onUpdateCell, onRemoveRow, currentPage, onPageChange }: DataTableProps) {
   const [activeCell, setActiveCell] = useState<{ row: number; field: string } | null>(null)
-  const [currentPage, setCurrentPage] = useState(1)
   const [totalPages, setTotalPages] = useState(1)
   const [displayData, setDisplayData] = useState<any[]>([])
-  const [isLoadingMore, setIsLoadingMore] = useState(false)
   const { toast } = useToast()
   const tableRef = useRef<HTMLDivElement>(null)
 
@@ -39,18 +39,13 @@ export default function DataTable({ data, onUpdateCell, onRemoveRow }: DataTable
   useEffect(() => {
     if (data.length > 0) {
       setTotalPages(Math.ceil(data.length / ROWS_PER_PAGE))
-      updateDisplayData(1)
+      updateDisplayData(currentPage)
     } else {
       setDisplayData([])
       setTotalPages(1)
-      setCurrentPage(1)
+      onPageChange(1)
     }
-  }, [data])
-
-  // Update display data when page changes
-  useEffect(() => {
-    updateDisplayData(currentPage)
-  }, [currentPage])
+  }, [data, currentPage, onPageChange])
 
   const updateDisplayData = (page: number) => {
     const startIndex = (page - 1) * ROWS_PER_PAGE
@@ -70,6 +65,11 @@ export default function DataTable({ data, onUpdateCell, onRemoveRow }: DataTable
     // Special handling for CPF
     if (fieldId === "cpfBeneficiario") {
       value = value.replace(/\D/g, "")
+
+      // Validação adicional para CPF - não permitir mais que 11 dígitos
+      if (value.length > 11) {
+        value = value.slice(0, 11)
+      }
     }
 
     // Special handling for tipoRegistro
@@ -97,7 +97,7 @@ export default function DataTable({ data, onUpdateCell, onRemoveRow }: DataTable
     // Always show first page
     items.push(
       <PaginationItem key="first">
-        <PaginationLink onClick={() => setCurrentPage(1)} isActive={currentPage === 1}>
+        <PaginationLink onClick={() => onPageChange(1)} isActive={currentPage === 1}>
           1
         </PaginationLink>
       </PaginationItem>,
@@ -118,7 +118,7 @@ export default function DataTable({ data, onUpdateCell, onRemoveRow }: DataTable
 
       items.push(
         <PaginationItem key={i}>
-          <PaginationLink onClick={() => setCurrentPage(i)} isActive={currentPage === i}>
+          <PaginationLink onClick={() => onPageChange(i)} isActive={currentPage === i}>
             {i}
           </PaginationLink>
         </PaginationItem>,
@@ -138,7 +138,7 @@ export default function DataTable({ data, onUpdateCell, onRemoveRow }: DataTable
     if (totalPages > 1) {
       items.push(
         <PaginationItem key="last">
-          <PaginationLink onClick={() => setCurrentPage(totalPages)} isActive={currentPage === totalPages}>
+          <PaginationLink onClick={() => onPageChange(totalPages)} isActive={currentPage === totalPages}>
             {totalPages}
           </PaginationLink>
         </PaginationItem>,
@@ -200,9 +200,10 @@ export default function DataTable({ data, onUpdateCell, onRemoveRow }: DataTable
                                 : ""
                             } ${
                               field.id === "cpfBeneficiario" &&
-                              row[field.id] &&
-                              row[field.id].length === 11 &&
-                              !validateCPF(row[field.id])
+                              (
+                                (row[field.id] && row[field.id].length !== 11) ||
+                                  (row[field.id] && row[field.id].length === 11 && !validateCPF(row[field.id]))
+                              )
                                 ? "bg-red-50 text-red-800"
                                 : ""
                             }`}
@@ -211,7 +212,20 @@ export default function DataTable({ data, onUpdateCell, onRemoveRow }: DataTable
                           />
                         </TooltipTrigger>
                         <TooltipContent>
-                          <p className="max-w-xs whitespace-normal">{field.description}</p>
+                          <p className="max-w-xs whitespace-normal">
+                            {field.description}
+                            {field.id === "cpfBeneficiario" && row[field.id] && row[field.id].length !== 11 && (
+                              <span className="block text-red-600 font-semibold mt-1">
+                                CPF deve ter 11 dígitos. Atual: {row[field.id].length}
+                              </span>
+                            )}
+                            {field.id === "cpfBeneficiario" &&
+                              row[field.id] &&
+                              row[field.id].length === 11 &&
+                              !validateCPF(row[field.id]) && (
+                                <span className="block text-red-600 font-semibold mt-1">CPF inválido</span>
+                              )}
+                          </p>
                         </TooltipContent>
                       </Tooltip>
                     </TooltipProvider>
@@ -229,7 +243,7 @@ export default function DataTable({ data, onUpdateCell, onRemoveRow }: DataTable
             <PaginationContent>
               <PaginationItem>
                 <PaginationPrevious
-                  onClick={() => setCurrentPage((prev) => Math.max(prev - 1, 1))}
+                  onClick={() => onPageChange(Math.max(currentPage - 1, 1))}
                   disabled={currentPage === 1}
                 />
               </PaginationItem>
@@ -238,7 +252,7 @@ export default function DataTable({ data, onUpdateCell, onRemoveRow }: DataTable
 
               <PaginationItem>
                 <PaginationNext
-                  onClick={() => setCurrentPage((prev) => Math.min(prev + 1, totalPages))}
+                  onClick={() => onPageChange(Math.min(currentPage + 1, totalPages))}
                   disabled={currentPage === totalPages}
                 />
               </PaginationItem>

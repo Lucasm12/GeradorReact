@@ -9,9 +9,10 @@ import { Toaster } from "@/components/ui/toaster"
 import { useToast } from "@/hooks/use-toast"
 import { FileSpreadsheet, Download, Upload, Plus, FileText, Copy, Trash2 } from "lucide-react"
 import DataTable from "@/components/data-table"
-// Substitua a importação do FileUploader pelo novo componente otimizado
 import FileUploader from "@/components/file-uploader-with-worker"
 import { FIELD_DEFINITIONS } from "@/lib/field-definitions"
+import { validateCPF } from "@/lib/validators"
+import { CpfValidationAlert } from "@/components/cpf-validation-alert"
 
 export default function Home() {
   const [accountNumber, setAccountNumber] = useState("")
@@ -19,8 +20,11 @@ export default function Home() {
   const [data, setData] = useState<any[]>([])
   const [isGenerating, setIsGenerating] = useState(false)
   const [activeTab, setActiveTab] = useState("editor")
+  const [currentPage, setCurrentPage] = useState(1)
+  const [invalidCpfRows, setInvalidCpfRows] = useState<number[]>([])
   const { toast } = useToast()
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const ROWS_PER_PAGE = 100
 
   // Initialize with one empty row if no data
   useEffect(() => {
@@ -28,6 +32,27 @@ export default function Home() {
       handleAddRow()
     }
   }, [])
+
+  // Verificar CPFs inválidos sempre que os dados mudarem
+  useEffect(() => {
+    validateAllCpfs()
+  }, [data])
+
+  const validateAllCpfs = () => {
+    const invalidRows: number[] = []
+
+    for (let i = 0; i < data.length; i++) {
+      const cpf = data[i].cpfBeneficiario
+      if (cpf) {
+        // Verificar se o CPF tem 11 dígitos e é válido
+        if (cpf.length !== 11 || !validateCPF(cpf)) {
+          invalidRows.push(i + 1)
+        }
+      }
+    }
+
+    setInvalidCpfRows(invalidRows)
+  }
 
   const handleAddRow = () => {
     const newRow = FIELD_DEFINITIONS.reduce(
@@ -84,11 +109,38 @@ export default function Home() {
     setData(newData)
   }
 
+  const handleNavigateToRow = (rowNumber: number) => {
+    // Calcular a página onde a linha está
+    const targetPage = Math.ceil(rowNumber / ROWS_PER_PAGE)
+
+    // Mudar para a página correta
+    setCurrentPage(targetPage)
+
+    // Mudar para a aba do editor
+    setActiveTab("editor")
+
+    // Notificar o usuário
+    toast({
+      title: "Navegação",
+      description: `Navegando para a linha ${rowNumber} na página ${targetPage}`,
+    })
+  }
+
   const handleGenerateFile = () => {
     if (!accountNumber) {
       toast({
         title: "Erro",
         description: "Por favor, preencha o número da conta da empresa",
+        variant: "destructive",
+      })
+      return
+    }
+
+    // Verificar CPFs inválidos antes de gerar o arquivo
+    if (invalidCpfRows.length > 0) {
+      toast({
+        title: "Erro: CPFs inválidos",
+        description: "Não é possível gerar o arquivo. Por favor, corrija os CPFs inválidos destacados em vermelho.",
         variant: "destructive",
       })
       return
@@ -298,6 +350,7 @@ export default function Home() {
     setData([])
     setGeneratedContent("")
     setAccountNumber("")
+    setInvalidCpfRows([])
 
     // Simular um refresh da página
     window.location.reload()
@@ -353,7 +406,7 @@ export default function Home() {
             </Button>
             <Button
               onClick={handleGenerateFile}
-              disabled={isGenerating || data.length === 0}
+              disabled={isGenerating || data.length === 0 || invalidCpfRows.length > 0}
               className="flex items-center gap-2"
             >
               <FileText className="h-4 w-4" />
@@ -361,6 +414,10 @@ export default function Home() {
             </Button>
           </div>
         </div>
+
+        {invalidCpfRows.length > 0 && (
+          <CpfValidationAlert invalidRows={invalidCpfRows} onNavigateToRow={handleNavigateToRow} />
+        )}
 
         <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
           <TabsList className="grid w-full md:w-[400px] grid-cols-2">
@@ -370,7 +427,13 @@ export default function Home() {
           <TabsContent value="editor" className="mt-4">
             <Card>
               <CardContent className="p-0 overflow-auto">
-                <DataTable data={data} onUpdateCell={handleUpdateCell} onRemoveRow={handleRemoveRow} />
+                <DataTable
+                  data={data}
+                  onUpdateCell={handleUpdateCell}
+                  onRemoveRow={handleRemoveRow}
+                  currentPage={currentPage}
+                  onPageChange={setCurrentPage}
+                />
               </CardContent>
             </Card>
           </TabsContent>
@@ -421,6 +484,7 @@ export default function Home() {
           ref={fileInputRef}
           onDataLoaded={(importedData) => {
             setData(importedData)
+            validateAllCpfs() // Validar CPFs após importação
             toast({
               title: "Sucesso",
               description: `${importedData.length} registros importados com sucesso!`,
