@@ -30,6 +30,11 @@ export function ProgressModal({ isOpen, current, total, speed, timeRemaining }: 
           <div className="text-sm text-gray-500">
             <p>Velocidade: {speed} registros/s</p>
             {timeRemaining !== undefined && <p>Tempo restante estimado: {formatTime(timeRemaining)}</p>}
+            {total > 10000 && (
+              <p className="mt-2 text-amber-600">
+                Arquivos muito grandes podem levar mais tempo para processar. Por favor, aguarde.
+              </p>
+            )}
           </div>
         )}
       </div>

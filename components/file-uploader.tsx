@@ -102,6 +102,7 @@ const FileUploader = forwardRef<HTMLInputElement, FileUploaderProps>(({ onDataLo
     }
   }
 
+  // Substitua o método handleFileChange por esta versão:
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
@@ -154,54 +155,18 @@ const FileUploader = forwardRef<HTMLInputElement, FileUploaderProps>(({ onDataLo
             setProgress({ current, total })
           })
 
-          // Instead of loading all data at once, we'll load it in batches
-          // First batch of 1000 records for immediate display
-          const initialBatch = processedData.slice(0, 1000)
-
-          // Pass initial batch to parent component
-          onDataLoaded(initialBatch)
-
-          // Store the rest of the data for later loading
-          if (processedData.length > 1000) {
-            // Use localStorage to store the remaining data in chunks
-            // This prevents memory issues with very large datasets
-            const remainingData = processedData.slice(1000)
-            const totalChunks = Math.ceil(remainingData.length / 1000)
-
-            // Store metadata about the import
-            localStorage.setItem(
-              "importMetadata",
-              JSON.stringify({
-                totalRecords: processedData.length,
-                loadedRecords: 1000,
-                totalChunks: totalChunks,
-                timestamp: Date.now(),
-              }),
-            )
-
-            // Store each chunk separately
-            for (let i = 0; i < totalChunks; i++) {
-              const chunk = remainingData.slice(i * 1000, (i + 1) * 1000)
-              localStorage.setItem(`importChunk_${i}`, JSON.stringify(chunk))
-            }
-
-            // Show notification about remaining data
-            toast({
-              title: "Importação parcial concluída",
-              description: `Carregados 1.000 de ${processedData.length} registros. Os demais serão carregados conforme necessário.`,
-              duration: 5000,
-            })
-          } else {
-            toast({
-              title: "Sucesso",
-              description: `${processedData.length} registros importados com sucesso!`,
-            })
-          }
+          // Pass all data to parent component
+          onDataLoaded(processedData)
 
           // Reset file input
           if (fileInputRef.current) {
             fileInputRef.current.value = ""
           }
+
+          toast({
+            title: "Sucesso",
+            description: `${processedData.length} registros importados com sucesso!`,
+          })
         } catch (error) {
           console.error("Error processing file:", error)
           toast({

@@ -52,44 +52,6 @@ export default function DataTable({ data, onUpdateCell, onRemoveRow }: DataTable
     updateDisplayData(currentPage)
   }, [currentPage])
 
-  // Check if there's more data to load from localStorage
-  useEffect(() => {
-    const checkForRemainingData = async () => {
-      try {
-        const metadataStr = localStorage.getItem("importMetadata")
-        if (!metadataStr) return
-
-        const metadata = JSON.parse(metadataStr)
-        const { totalRecords, loadedRecords, totalChunks, timestamp } = metadata
-
-        // If it's been more than 1 hour, clear the data (to prevent stale data)
-        const oneHour = 60 * 60 * 1000
-        if (Date.now() - timestamp > oneHour) {
-          clearStoredImportData()
-          return
-        }
-
-        // If we haven't loaded all records yet
-        if (loadedRecords < totalRecords && data.length < totalRecords) {
-          toast({
-            title: "Dados adicionais disponíveis",
-            description: `${loadedRecords} de ${totalRecords} registros carregados. Clique para carregar mais.`,
-            action: (
-              <Button variant="outline" size="sm" onClick={loadMoreData}>
-                Carregar mais
-              </Button>
-            ),
-            duration: 10000,
-          })
-        }
-      } catch (error) {
-        console.error("Error checking for remaining data:", error)
-      }
-    }
-
-    checkForRemainingData()
-  }, [data])
-
   const updateDisplayData = (page: number) => {
     const startIndex = (page - 1) * ROWS_PER_PAGE
     const endIndex = Math.min(startIndex + ROWS_PER_PAGE, data.length)
@@ -98,91 +60,6 @@ export default function DataTable({ data, onUpdateCell, onRemoveRow }: DataTable
     // Scroll to top of table when page changes
     if (tableRef.current) {
       tableRef.current.scrollTop = 0
-    }
-  }
-
-  const loadMoreData = async () => {
-    try {
-      setIsLoadingMore(true)
-
-      const metadataStr = localStorage.getItem("importMetadata")
-      if (!metadataStr) return
-
-      const metadata = JSON.parse(metadataStr)
-      const { loadedRecords, totalChunks } = metadata
-
-      // Calculate which chunk to load next
-      const nextChunkIndex = Math.floor((loadedRecords - 1000) / 1000)
-
-      if (nextChunkIndex < totalChunks) {
-        const chunkStr = localStorage.getItem(`importChunk_${nextChunkIndex}`)
-        if (chunkStr) {
-          const chunk = JSON.parse(chunkStr)
-
-          // Add the chunk to the existing data
-          const newData = [...data, ...chunk]
-
-          // Update the parent component with the new data
-          // We need to create a function in the parent to handle this
-          // For now, we'll just update our local state
-          // onUpdateData(newData)
-
-          // Update metadata
-          const newLoadedRecords = loadedRecords + chunk.length
-          localStorage.setItem(
-            "importMetadata",
-            JSON.stringify({
-              ...metadata,
-              loadedRecords: newLoadedRecords,
-            }),
-          )
-
-          // Remove the loaded chunk to free up localStorage space
-          localStorage.removeItem(`importChunk_${nextChunkIndex}`)
-
-          toast({
-            title: "Dados adicionais carregados",
-            description: `${newLoadedRecords} de ${metadata.totalRecords} registros carregados.`,
-          })
-        }
-      }
-
-      // If we've loaded all chunks, clean up
-      if (nextChunkIndex + 1 >= totalChunks) {
-        clearStoredImportData()
-        toast({
-          title: "Importação concluída",
-          description: "Todos os registros foram carregados com sucesso!",
-        })
-      }
-    } catch (error) {
-      console.error("Error loading more data:", error)
-      toast({
-        title: "Erro",
-        description: "Ocorreu um erro ao carregar mais dados",
-        variant: "destructive",
-      })
-    } finally {
-      setIsLoadingMore(false)
-    }
-  }
-
-  const clearStoredImportData = () => {
-    // Clear all import-related data from localStorage
-    const metadataStr = localStorage.getItem("importMetadata")
-    if (metadataStr) {
-      try {
-        const metadata = JSON.parse(metadataStr)
-        const { totalChunks } = metadata
-
-        for (let i = 0; i < totalChunks; i++) {
-          localStorage.removeItem(`importChunk_${i}`)
-        }
-
-        localStorage.removeItem("importMetadata")
-      } catch (error) {
-        console.error("Error clearing stored import data:", error)
-      }
     }
   }
 

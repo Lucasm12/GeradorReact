@@ -9,7 +9,8 @@ import { Toaster } from "@/components/ui/toaster"
 import { useToast } from "@/hooks/use-toast"
 import { FileSpreadsheet, Download, Upload, Plus, FileText, Copy, Trash2 } from "lucide-react"
 import DataTable from "@/components/data-table"
-import FileUploader from "@/components/file-uploader"
+// Substitua a importação do FileUploader pelo novo componente otimizado
+import FileUploader from "@/components/file-uploader-with-worker"
 import { FIELD_DEFINITIONS } from "@/lib/field-definitions"
 
 export default function Home() {
