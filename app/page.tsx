@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useRef } from "react"
+import { useState, useRef, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
@@ -20,6 +20,13 @@ export default function Home() {
   const [activeTab, setActiveTab] = useState("editor")
   const { toast } = useToast()
   const fileInputRef = useRef<HTMLInputElement>(null)
+
+  // Initialize with one empty row if no data
+  useEffect(() => {
+    if (data.length === 0) {
+      handleAddRow()
+    }
+  }, [])
 
   const handleAddRow = () => {
     const newRow = FIELD_DEFINITIONS.reduce(
@@ -299,11 +306,6 @@ export default function Home() {
       description: "Todos os dados foram limpos com sucesso!",
     })
   }
-
-  // Initialize with one empty row if no data
-  // if (data.length === 0) {
-  //   handleAddRow()
-  // }
 
   return (
     <main className="container mx-auto px-4 py-6">

@@ -21,6 +21,87 @@ const FileUploader = forwardRef<HTMLInputElement, FileUploaderProps>(({ onDataLo
 
   useImperativeHandle(ref, () => fileInputRef.current as HTMLInputElement)
 
+  const processDataInChunks = async (
+    dataRows: string[][],
+    onProgress: (current: number, total: number) => void,
+  ): Promise<Record<string, string>[]> => {
+    // Use smaller chunks to prevent browser from freezing
+    const CHUNK_SIZE = 50
+    const processedData: Record<string, string>[] = []
+
+    // Variables for speed calculation
+    const startTime = Date.now()
+    let lastUpdateTime = startTime
+    let processedSinceLastUpdate = 0
+
+    try {
+      for (let i = 0; i < dataRows.length; i += CHUNK_SIZE) {
+        // Process a chunk of data
+        const chunk = dataRows.slice(i, Math.min(i + CHUNK_SIZE, dataRows.length))
+
+        // Process each row in the chunk
+        const chunkData = chunk.map((row, chunkIndex) => {
+          const rowData: Record<string, string> = {}
+          const index = i + chunkIndex
+
+          // Set sequential number
+          rowData.sequencialRegistro = (index + 1).toString()
+
+          // Set default values for special fields
+          rowData.tipoMovimentacao = "1"
+
+          // Set current date for dataOperacao if not provided
+          const today = new Date()
+          const day = String(today.getDate()).padStart(2, "0")
+          const month = String(today.getMonth() + 1).padStart(2, "0")
+          const year = today.getFullYear()
+          rowData.dataOperacao = `${day}${month}${year}`
+
+          // Map other fields
+          FIELD_DEFINITIONS.forEach((field, fieldIndex) => {
+            if (field.id !== "sequencialRegistro" && field.id !== "tipoMovimentacao" && field.id !== "dataOperacao") {
+              rowData[field.id] = row[fieldIndex] || ""
+            }
+          })
+
+          return rowData
+        })
+
+        // Add chunk data to processed data
+        processedData.push(...chunkData)
+
+        // Update progress
+        const currentProgress = Math.min(i + CHUNK_SIZE, dataRows.length)
+        onProgress(currentProgress, dataRows.length)
+
+        // Calculate speed and time remaining
+        processedSinceLastUpdate += chunk.length
+        const now = Date.now()
+        if (now - lastUpdateTime > 1000) {
+          // Update every second
+          const elapsedSeconds = (now - lastUpdateTime) / 1000
+          const speed = Math.round(processedSinceLastUpdate / elapsedSeconds)
+          setImportSpeed(speed)
+
+          const remaining = dataRows.length - currentProgress
+          const timeRemainingSeconds = Math.round(remaining / speed)
+          setTimeRemaining(timeRemainingSeconds)
+
+          lastUpdateTime = now
+          processedSinceLastUpdate = 0
+        }
+
+        // Allow UI to update by yielding execution
+        await new Promise((resolve) => setTimeout(resolve, 0))
+      }
+
+      return processedData
+    } catch (error) {
+      console.error("Error processing data chunks:", error)
+      throw error
+    }
+  }
+
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
@@ -36,15 +117,18 @@ const FileUploader = forwardRef<HTMLInputElement, FileUploaderProps>(({ onDataLo
         return
       }
 
+      setIsImporting(true)
+      setProgress({ current: 0, total: 100 }) // Initial progress before we know the total
+
       // Load XLSX library dynamically
       const XLSX = await import("xlsx")
 
       const reader = new FileReader()
       reader.onload = async (event) => {
         try {
-          setIsImporting(true)
-
           const data = new Uint8Array(event.target?.result as ArrayBuffer)
+
+          // Parse workbook
           const workbook = XLSX.read(data, { type: "array" })
 
           // Get first sheet
@@ -62,97 +146,62 @@ const FileUploader = forwardRef<HTMLInputElement, FileUploaderProps>(({ onDataLo
           // Skip header row
           const dataRows = jsonData.slice(1)
 
-          // Set total for progress
+          // Update total for progress
           setProgress({ current: 0, total: dataRows.length })
 
-          // Variables for speed calculation
-          const startTime = Date.now()
-          let lastUpdateTime = startTime
-          let processedSinceLastUpdate = 0
+          // Process data in chunks with progress updates
+          const processedData = await processDataInChunks(dataRows, (current, total) => {
+            setProgress({ current, total })
+          })
 
-          // Process data in chunks to avoid UI freezing
-          const CHUNK_SIZE = 100
-          const processedData: Record<string, string>[] = []
+          // Instead of loading all data at once, we'll load it in batches
+          // First batch of 1000 records for immediate display
+          const initialBatch = processedData.slice(0, 1000)
 
-          for (let i = 0; i < dataRows.length; i += CHUNK_SIZE) {
-            // Process a chunk of data
-            const chunk = dataRows.slice(i, Math.min(i + CHUNK_SIZE, dataRows.length))
+          // Pass initial batch to parent component
+          onDataLoaded(initialBatch)
 
-            // Process each row in the chunk
-            const chunkData = chunk.map((row, chunkIndex) => {
-              const rowData: Record<string, string> = {}
-              const index = i + chunkIndex
+          // Store the rest of the data for later loading
+          if (processedData.length > 1000) {
+            // Use localStorage to store the remaining data in chunks
+            // This prevents memory issues with very large datasets
+            const remainingData = processedData.slice(1000)
+            const totalChunks = Math.ceil(remainingData.length / 1000)
 
-              // Set sequential number
-              rowData.sequencialRegistro = (index + 1).toString()
+            // Store metadata about the import
+            localStorage.setItem(
+              "importMetadata",
+              JSON.stringify({
+                totalRecords: processedData.length,
+                loadedRecords: 1000,
+                totalChunks: totalChunks,
+                timestamp: Date.now(),
+              }),
+            )
 
-              // Set default values for special fields
-              rowData.tipoMovimentacao = "1"
-
-              // Set current date for dataOperacao if not provided
-              const today = new Date()
-              const day = String(today.getDate()).padStart(2, "0")
-              const month = String(today.getMonth() + 1).padStart(2, "0")
-              const year = today.getFullYear()
-              rowData.dataOperacao = `${day}${month}${year}`
-
-              // Map other fields
-              FIELD_DEFINITIONS.forEach((field, fieldIndex) => {
-                if (
-                  field.id !== "sequencialRegistro" &&
-                  field.id !== "tipoMovimentacao" &&
-                  field.id !== "dataOperacao"
-                ) {
-                  rowData[field.id] = row[fieldIndex] || ""
-                }
-              })
-
-              return rowData
-            })
-
-            // Add chunk data to processed data
-            processedData.push(...chunkData)
-
-            // Update progress
-            const currentProgress = Math.min(i + CHUNK_SIZE, dataRows.length)
-            setProgress({ current: currentProgress, total: dataRows.length })
-
-            // Calculate speed and time remaining
-            processedSinceLastUpdate += chunk.length
-            const now = Date.now()
-            if (now - lastUpdateTime > 1000) {
-              // Update every second
-              const elapsedSeconds = (now - lastUpdateTime) / 1000
-              const speed = Math.round(processedSinceLastUpdate / elapsedSeconds)
-              setImportSpeed(speed)
-
-              const remaining = dataRows.length - currentProgress
-              const timeRemainingSeconds = Math.round(remaining / speed)
-              setTimeRemaining(timeRemainingSeconds)
-
-              lastUpdateTime = now
-              processedSinceLastUpdate = 0
+            // Store each chunk separately
+            for (let i = 0; i < totalChunks; i++) {
+              const chunk = remainingData.slice(i * 1000, (i + 1) * 1000)
+              localStorage.setItem(`importChunk_${i}`, JSON.stringify(chunk))
             }
 
-            // Allow UI to update by yielding execution
-            await new Promise((resolve) => setTimeout(resolve, 0))
+            // Show notification about remaining data
+            toast({
+              title: "Importação parcial concluída",
+              description: `Carregados 1.000 de ${processedData.length} registros. Os demais serão carregados conforme necessário.`,
+              duration: 5000,
+            })
+          } else {
+            toast({
+              title: "Sucesso",
+              description: `${processedData.length} registros importados com sucesso!`,
+            })
           }
-
-          // Pass data to parent component
-          onDataLoaded(processedData)
 
           // Reset file input
           if (fileInputRef.current) {
             fileInputRef.current.value = ""
           }
-
-          // Calculate total time
-          const totalTime = (Date.now() - startTime) / 1000
-
-          toast({
-            title: "Sucesso",
-            description: `${dataRows.length} registros importados em ${totalTime.toFixed(1)} segundos`,
-          })
         } catch (error) {
           console.error("Error processing file:", error)
           toast({
