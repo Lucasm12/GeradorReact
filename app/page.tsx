@@ -286,9 +286,14 @@ export default function Home() {
   }
 
   const handleClearData = () => {
+    // Limpar todos os dados
     setData([])
     setGeneratedContent("")
-    handleAddRow() // Add one empty row
+    setAccountNumber("")
+
+    // Simular um refresh da página
+    window.location.reload()
+
     toast({
       title: "Sucesso",
       description: "Todos os dados foram limpos com sucesso!",
@@ -296,9 +301,9 @@ export default function Home() {
   }
 
   // Initialize with one empty row if no data
-  if (data.length === 0) {
-    handleAddRow()
-  }
+  // if (data.length === 0) {
+  //   handleAddRow()
+  // }
 
   return (
     <main className="container mx-auto px-4 py-6">
