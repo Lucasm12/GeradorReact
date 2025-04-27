@@ -22,7 +22,7 @@ const FileUploader = forwardRef<HTMLInputElement, FileUploaderProps>(({ onDataLo
 
     try {
       // Check if file is Excel or CSV
-      if (!file.name.match(/\.(xlsx|xls|csv)$/)) {
+      if (!file.name.match(/\.(xlsx|xls|xlsm|csv)$/)) {
         toast({
           title: "Erro",
           description: "Por favor, selecione um arquivo Excel ou CSV",

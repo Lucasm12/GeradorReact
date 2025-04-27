@@ -274,7 +274,7 @@ export default function Home() {
 
   const handleDownloadEmptyLayout = () => {
     window.open(
-      "https://docs.google.com/spreadsheets/d/11bHil0n7yBZsSnYxnNu5Lb5XSDMfAKyN/edit?usp=drive_link&ouid=110128864082531091825&rtpof=true&sd=true",
+      "https://docs.google.com/spreadsheets/d/1zoHfQMN2eGzHE_asDLAWxCvSL9wjLY9x/edit?usp=sharing&ouid=110128864082531091825&rtpof=true&sd=true",
       "_blank",
     )
   }
